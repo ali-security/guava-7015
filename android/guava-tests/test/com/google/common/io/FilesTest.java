@@ -16,8 +16,12 @@
 
 package com.google.common.io;
 
+import static com.google.common.base.StandardSystemProperty.JAVA_IO_TMPDIR;
 import static com.google.common.io.Files.touch;
 import static com.google.common.truth.Truth.assertThat;
+import static java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE;
+import static java.nio.file.attribute.PosixFilePermission.OWNER_READ;
+import static java.nio.file.attribute.PosixFilePermission.OWNER_WRITE;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
@@ -29,6 +33,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributes;
 import java.io.PrintWriter;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -358,12 +364,36 @@ public class FilesTest extends IoTestCase {
     }
   }
 
-  public void testCreateTempDir() {
+  public void testCreateTempDir() throws IOException {
+    if (JAVA_IO_TMPDIR.value().equals("/sdcard")) {
+      try {
+        Files.createTempDir();
+        fail("Expected IllegalStateException");
+      } catch (IllegalStateException e) {
+        // Expected exception
+        return;
+      }
+    }
     File temp = Files.createTempDir();
-    assertTrue(temp.exists());
-    assertTrue(temp.isDirectory());
-    assertThat(temp.listFiles()).isEmpty();
-    assertTrue(temp.delete());
+    try {
+      assertTrue(temp.exists());
+      assertTrue(temp.isDirectory());
+      assertThat(temp.listFiles()).isEmpty();
+
+      if (isAndroid()) {
+        return;
+      }
+      PosixFileAttributes attributes =
+          java.nio.file.Files.getFileAttributeView(temp.toPath(), PosixFileAttributeView.class)
+              .readAttributes();
+      assertThat(attributes.permissions()).containsExactly(OWNER_READ, OWNER_WRITE, OWNER_EXECUTE);
+    } finally {
+      assertTrue(temp.delete());
+    }
+  }
+
+  private static boolean isAndroid() {
+    return System.getProperty("java.runtime.name", "").contains("Android");
   }
 
   public void testMove() throws IOException {
